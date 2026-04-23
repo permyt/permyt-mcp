@@ -228,7 +228,7 @@
         <div class="code-block" onclick="copyEl(this)">{
   "mcpServers": {
     "permyt": {
-      "url": "{{ base_url }}/mcp/sse",
+      "url": "{{ base_url }}/mcp",
       "headers": {
         "Authorization": "Bearer YOUR_TOKEN"
       }
@@ -255,7 +255,7 @@
         <div class="code-block" onclick="copyEl(this)">{
   "mcpServers": {
     "permyt": {
-      "url": "{{ base_url }}/mcp/sse",
+      "url": "{{ base_url }}/mcp",
       "headers": {
         "Authorization": "Bearer YOUR_TOKEN"
       }
@@ -272,18 +272,18 @@
       <div class="tab-panel" id="tab-claude-ai">
         <div class="step">
           <span class="step-num">1</span>
-          <span class="step-text">Create a token named "Claude.ai" above</span>
-        </div>
-        <div class="step">
-          <span class="step-num">2</span>
           <span class="step-text">Go to Settings &rarr; MCP Servers &rarr; Add</span>
         </div>
         <div class="step">
-          <span class="step-num">3</span>
-          <span class="step-text">Enter:</span>
+          <span class="step-num">2</span>
+          <span class="step-text">Enter the URL:</span>
         </div>
-        <div class="code-block" onclick="copyEl(this)">URL: {{ base_url }}/mcp/sse
-Header: Authorization: Bearer YOUR_TOKEN</div>
+        <div class="code-block" onclick="copyEl(this)">{{ base_url }}/mcp</div>
+        <div class="step" style="margin-top: 14px;">
+          <span class="step-num">3</span>
+          <span class="step-text">Click Connect &mdash; OAuth login will open automatically</span>
+        </div>
+        <div class="note">No token needed. Claude.ai authenticates via OAuth.</div>
       </div>
 
       <!-- ChatGPT -->
@@ -322,7 +322,7 @@ Content-Type: application/json
           <span class="step-num">2</span>
           <span class="step-text">If MCP is supported, use the same config as Claude:</span>
         </div>
-        <div class="code-block" onclick="copyEl(this)">URL: {{ base_url }}/mcp/sse
+        <div class="code-block" onclick="copyEl(this)">URL: {{ base_url }}/mcp
 Header: Authorization: Bearer YOUR_TOKEN</div>
         <div class="note" style="margin-top: 12px;">Otherwise, use the REST API endpoints (same as ChatGPT tab).</div>
       </div>

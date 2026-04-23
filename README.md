@@ -79,7 +79,7 @@ Pick your platform below. No local installation needed — the server runs hoste
 Add via CLI:
 
 ```bash
-claude mcp add permyt -- --url https://mcp.permyt.io/mcp/sse --header "Authorization: Bearer <your-auth-token>"
+claude mcp add permyt -- --url https://mcp.permyt.io/mcp --header "Authorization: Bearer <your-auth-token>"
 ```
 
 Or add manually to `~/.claude.json`:
@@ -88,7 +88,7 @@ Or add manually to `~/.claude.json`:
 {
   "mcpServers": {
     "permyt": {
-      "url": "https://mcp.permyt.io/mcp/sse",
+      "url": "https://mcp.permyt.io/mcp",
       "headers": {
         "Authorization": "Bearer <your-auth-token>"
       }
@@ -108,7 +108,7 @@ Or add manually to `~/.claude.json`:
 {
   "mcpServers": {
     "permyt": {
-      "url": "https://mcp.permyt.io/mcp/sse",
+      "url": "https://mcp.permyt.io/mcp",
       "headers": {
         "Authorization": "Bearer <your-auth-token>"
       }
@@ -124,9 +124,8 @@ Or add manually to `~/.claude.json`:
 ### Claude.ai (Web)
 
 1. Go to **Settings > MCP Servers > Add**
-2. Enter:
-   - **URL**: `https://mcp.permyt.io/mcp/sse`
-   - **Header**: `Authorization: Bearer <your-auth-token>`
+2. Enter URL: `https://mcp.permyt.io/mcp`
+3. Click **Connect** — OAuth login will open automatically
 
 ---
 
@@ -162,7 +161,7 @@ The GPT should call `requests/access/` with a natural-language description, then
 
 OpenClaw can connect via MCP (if supported) or REST API:
 
-**MCP (if supported):** Use the same config as Claude — URL `https://mcp.permyt.io/mcp/sse` with Bearer token header.
+**MCP (if supported):** Use the same config as Claude — URL `https://mcp.permyt.io/mcp` with Bearer token header.
 
 **REST API:** Same endpoints as ChatGPT above.
 
@@ -206,8 +205,7 @@ The agent describes what data it needs, and you **approve or deny each request o
 
 | Method | Path                           | Auth             | Description                 |
 | ------ | ------------------------------ | ---------------- | --------------------------- |
-| GET    | `/mcp/sse`                     | `Bearer <token>` | MCP SSE connection (Claude) |
-| POST   | `/mcp/messages/`               | Session          | MCP message transport       |
+| POST   | `/mcp`                         | OAuth / Bearer   | MCP Streamable HTTP (Claude)|
 | POST   | `/rest/requests/access/`       | `Token <token>`  | Submit access request       |
 | POST   | `/rest/requests/status/`       | `Token <token>`  | Poll status / fetch data    |
 | POST   | `/rest/auth/token/`            | None             | Login, get auth token       |

@@ -25,10 +25,10 @@ python manage.py migrate                   # apply migrations
 python manage.py runserver 9020            # REST API + QR login page
 ```
 
-### MCP Server (hosted — SSE)
+### MCP Server (hosted — Streamable HTTP)
 
 ```bash
-# Production: serves both Django + MCP SSE at /mcp/sse
+# Production: serves both Django + MCP Streamable HTTP at /mcp
 uvicorn settings.asgi:application --host 0.0.0.0 --port 9020
 ```
 
@@ -88,13 +88,12 @@ permyt-mcp/
 | `PermytInboundView` | `app/core/requests/views.py` | Inbound webhook for PERMYT broker callbacks |
 | `IndexView` | `app/common/pages/views.py` | QR login / dashboard page |
 | `mcp` (FastMCP) | `app/mcp/server.py` | MCP server with 3 tools for AI agents |
-| `create_sse_app` | `app/mcp/server.py` | Factory for SSE Starlette ASGI app |
-| `validate_sse_connection` | `app/mcp/auth.py` | Bearer token validation for SSE connections |
+| `create_mcp_app` | `app/mcp/server.py` | Factory for Streamable HTTP Starlette ASGI app |
 | `TokenRegenerateView` | `app/core/users/views.py` | Token revoke + regenerate endpoint |
 
 ### Transport modes
 
-**SSE (hosted, production)**: ASGI router at `settings/asgi.py` mounts MCP Starlette app at `/mcp/*` alongside Django. Users connect with `Authorization: Bearer <token>`. Auth validated per-connection (ASGI level) and per-tool (via `Context`).
+**Streamable HTTP (hosted, production)**: ASGI router at `settings/asgi.py` mounts MCP Starlette app at `/mcp` alongside Django. OAuth 2.0 auth with dynamic client registration. ASGI router also forwards `/.well-known/oauth-protected-resource/*` for RFC 9728 compliance.
 
 **stdio (local, development)**: Management command `mcp_server` sets module-level token. Tools fallback to it when no request context.
 
