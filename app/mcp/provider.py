@@ -1,5 +1,5 @@
 """
-OAuth 2.0 Authorization Server Provider for MCP SSE transport.
+OAuth 2.0 Authorization Server Provider for MCP Streamable HTTP transport.
 
 Implements the MCP library's OAuthAuthorizationServerProvider protocol,
 backed by Django ORM models. Supports Dynamic Client Registration (DCR)
@@ -263,7 +263,7 @@ class PermytOAuthProvider:
             )
 
         # Fallback: DRF token (unless disabled via setting)
-        if not getattr(settings, "DISABLE_SSE_DRF_TOKEN", False):
+        if not getattr(settings, "DISABLE_DRF_TOKEN_FALLBACK", False):
             drf_token = await sync_to_async(
                 Token.objects.filter(key=token).select_related("user").first
             )()

@@ -2,7 +2,7 @@
 FastMCP server exposing PERMYT requester tools for AI agents.
 
 Supports two transport modes:
-    - SSE (hosted): OAuth 2.0 auth (with DRF token fallback)
+    - Streamable HTTP (hosted): OAuth 2.0 auth (with DRF token fallback)
     - stdio (local): Management command with --token flag
 
 Tools:
@@ -69,6 +69,7 @@ _server_url = getattr(settings, "MCP_SERVER_URL", settings.BASE_URL.rstrip("/") 
 mcp = FastMCP(
     "permyt",
     instructions=MCP_INSTRUCTIONS,
+    streamable_http_path="/",
     auth_server_provider=_oauth_provider,
     auth=AuthSettings(
         issuer_url=_issuer_url,
@@ -80,7 +81,7 @@ mcp = FastMCP(
 
 
 # ---------------------------------------------------------------------------
-# Auth: per-request (SSE/OAuth) with fallback to module-level (stdio)
+# Auth: per-request (OAuth) with fallback to module-level (stdio)
 # ---------------------------------------------------------------------------
 
 # Module-level token — set by management command for stdio mode
@@ -118,7 +119,7 @@ async def _get_user_from_context(ctx: Context):
 
     Returns (PermytClient, User).
     """
-    # SSE/OAuth mode: get user from auth context (set by MCP auth middleware)
+    # OAuth mode: get user from auth context (set by MCP auth middleware)
     access_token = get_access_token()
     if access_token:
         user_id = getattr(access_token, "user_id", None)
@@ -144,12 +145,14 @@ async def _get_user_from_context(ctx: Context):
 # ---------------------------------------------------------------------------
 
 
-def create_sse_app():
-    """Create the Starlette ASGI app for SSE transport.
+def create_mcp_app():
+    """Create the Starlette ASGI app for Streamable HTTP transport.
 
-    Returns a FastMCP SSE app mounted at /mcp with OAuth auth routes.
+    Returns a FastMCP Streamable HTTP app with OAuth auth routes.
+    ASGI router strips /mcp prefix, so streamable_http_path="/" matches
+    external /mcp path after stripping.
     """
-    return mcp.sse_app(mount_path="/mcp")
+    return mcp.streamable_http_app()
 
 
 # ---------------------------------------------------------------------------
