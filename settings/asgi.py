@@ -22,14 +22,6 @@ from app.mcp.server import create_mcp_app
 
 _mcp_app = create_mcp_app()
 
-# RFC 8414 / RFC 9728: well-known paths that must reach the MCP Starlette app.
-# Clients look for these at /.well-known/{type}/mcp (issuer path appended),
-# but the SDK registers routes without the /mcp suffix. We strip it here.
-_WELL_KNOWN_PREFIXES = (
-    "/.well-known/oauth-authorization-server",
-    "/.well-known/oauth-protected-resource",
-)
-
 
 async def application(scope, receive, send):
     """Route MCP traffic to Starlette app, everything else to Django."""
@@ -49,13 +41,19 @@ async def application(scope, receive, send):
             await _mcp_app(scope, receive, send)
             return
 
-        for prefix in _WELL_KNOWN_PREFIXES:
-            if path.startswith(prefix):
-                # RFC 8414/9728: /.well-known/{type}/mcp → strip /mcp suffix
-                # so the SDK's route at /.well-known/{type} matches.
-                scope = dict(scope)
-                scope["path"] = prefix
-                await _mcp_app(scope, receive, send)
-                return
+        # RFC 8414: clients look for /.well-known/oauth-authorization-server/mcp
+        # but SDK registers route at /.well-known/oauth-authorization-server.
+        # Strip the /mcp suffix so the route matches.
+        if path.startswith("/.well-known/oauth-authorization-server"):
+            scope = dict(scope)
+            scope["path"] = "/.well-known/oauth-authorization-server"
+            await _mcp_app(scope, receive, send)
+            return
+
+        # RFC 9728: SDK registers route at /.well-known/oauth-protected-resource/mcp
+        # (full path including /mcp suffix). Pass through as-is.
+        if path.startswith("/.well-known/oauth-protected-resource"):
+            await _mcp_app(scope, receive, send)
+            return
 
     await django_app(scope, receive, send)

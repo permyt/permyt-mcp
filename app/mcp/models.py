@@ -1,5 +1,5 @@
 """
-OAuth 2.0 models for MCP SSE transport.
+OAuth 2.0 models for MCP Streamable HTTP transport.
 
 Stores OAuth clients (via DCR), authorization codes, access tokens,
 refresh tokens, and temporary authorization sessions for the QR login flow.
@@ -52,13 +52,13 @@ class OAuthAuthorizationCode(AppModel):
     redirect_uri = models.TextField()
     redirect_uri_provided_explicitly = models.BooleanField(default=True)
     resource = models.CharField(max_length=1024, blank=True, null=True)
-    expires_at = models.FloatField()
+    expires_at = models.IntegerField()
 
     class Meta:
         ordering = ("-created_at",)
 
     def is_expired(self):
-        return self.expires_at < time.time()
+        return self.expires_at < int(time.time())
 
 
 class OAuthAccessToken(AppModel):
@@ -113,10 +113,10 @@ class OAuthAuthorizationSession(AppModel):
     redirect_uri = models.TextField()
     redirect_uri_provided_explicitly = models.BooleanField(default=True)
     resource = models.CharField(max_length=1024, blank=True, null=True)
-    expires_at = models.FloatField()
+    expires_at = models.IntegerField()
 
     class Meta:
         ordering = ("-created_at",)
 
     def is_expired(self):
-        return self.expires_at < time.time()
+        return self.expires_at < int(time.time())

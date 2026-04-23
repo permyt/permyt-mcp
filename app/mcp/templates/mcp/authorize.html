@@ -60,7 +60,9 @@
     <p class="subtitle">Scan the QR code with your PERMYT app to authorize access.</p>
 
     {{ qr_data|json_script:"qr-data" }}
-    <div id="qr-container" data-login-id="{{ login_id|escapejs }}"></div>
+    <div id="qr-container"
+         data-login-id="{{ login_id|escapejs }}"
+         data-oauth-session="{{ oauth_session_id|escapejs }}"></div>
     <p id="status"><span class="spinner"></span> Waiting for scan&hellip;</p>
   </div>
 
@@ -70,6 +72,7 @@
       var container = document.getElementById("qr-container");
       var QR_DATA = document.getElementById("qr-data").textContent;
       var LOGIN_ID = container.dataset.loginId;
+      var OAUTH_SESSION = container.dataset.oauthSession;
 
       new QRCode(container, {
         text: QR_DATA,
@@ -81,7 +84,7 @@
       });
 
       var polling = setInterval(function () {
-        fetch("/rest/login/status/?id=" + encodeURIComponent(LOGIN_ID))
+        fetch("/rest/login/status/?id=" + encodeURIComponent(LOGIN_ID) + "&mode=oauth")
           .then(function (res) {
             return res.json().then(function (data) {
               return { status: res.status, data: data };
@@ -94,7 +97,9 @@
               el.className = "authenticated";
               el.textContent = "Authorized! Redirecting\u2026";
               setTimeout(function () {
-                window.location.href = "/oauth/callback/";
+                window.location.href = "/oauth/callback/"
+                  + "?login_id=" + encodeURIComponent(LOGIN_ID)
+                  + "&session=" + encodeURIComponent(OAUTH_SESSION);
               }, 500);
             } else if (result.status >= 400) {
               clearInterval(polling);

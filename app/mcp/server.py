@@ -114,7 +114,7 @@ def _get_client_and_user(auth_token: str):
 async def _get_user_from_context(ctx: Context):
     """Extract authenticated user from Context.
 
-    SSE/OAuth mode: Uses the MCP auth middleware contextvar (PermytAccessToken with user_id).
+    OAuth mode: Uses the MCP auth middleware contextvar (PermytAccessToken with user_id).
     stdio mode: Falls back to module-level _stdio_auth_token.
 
     Returns (PermytClient, User).
@@ -135,13 +135,13 @@ async def _get_user_from_context(ctx: Context):
 
     raise ValueError(
         "No auth token found. "
-        "SSE: OAuth authentication required. "
+        "Hosted: OAuth authentication required. "
         "stdio: set PERMYT_AUTH_TOKEN env var."
     )
 
 
 # ---------------------------------------------------------------------------
-# SSE app factory
+# Streamable HTTP app factory
 # ---------------------------------------------------------------------------
 
 
