@@ -61,8 +61,8 @@
 
     {{ qr_data|json_script:"qr-data" }}
     <div id="qr-container"
-         data-login-id="{{ login_id|escapejs }}"
-         data-oauth-session="{{ oauth_session_id|escapejs }}"></div>
+         data-login-id="{{ login_id }}"
+         data-oauth-session="{{ oauth_session_id }}"></div>
     <p id="status"><span class="spinner"></span> Waiting for scan&hellip;</p>
   </div>
 

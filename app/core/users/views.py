@@ -19,8 +19,6 @@ class LoginStatusView(APIView):
         if not login_id:
             return Response({"error": "id is required."}, status=400)
 
-        login_id = login_id.replace("\\u002D", "-")
-
         try:
             token_obj = LoginToken.objects.select_related("user").get(id=login_id)
         except LoginToken.DoesNotExist:

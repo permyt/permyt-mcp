@@ -60,7 +60,7 @@
     <p class="subtitle">Scan the QR code with your PERMYT app to connect.</p>
 
     {{ qr_data|json_script:"qr-data" }}
-    <div id="qr-container" data-login-id="{{ login_id|escapejs }}"></div>
+    <div id="qr-container" data-login-id="{{ login_id }}"></div>
     <p id="status"><span class="spinner"></span> Waiting for scan&hellip;</p>
   </div>
 
