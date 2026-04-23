@@ -33,6 +33,7 @@ from .models import (
 )
 
 ACCESS_TOKEN_TTL = 3600  # 1 hour
+AUTH_CODE_TTL = 300  # 5 minutes
 AUTH_SESSION_TTL = 600  # 10 minutes
 
 
@@ -102,7 +103,7 @@ class PermytOAuthProvider:
             redirect_uri=str(params.redirect_uri),
             redirect_uri_provided_explicitly=params.redirect_uri_provided_explicitly,
             resource=params.resource,
-            expires_at=time.time() + AUTH_SESSION_TTL,
+            expires_at=int(time.time()) + AUTH_SESSION_TTL,
         )
 
         base_url = settings.BASE_URL.rstrip("/")
@@ -280,34 +281,14 @@ class PermytOAuthProvider:
     # -- Token revocation --------------------------------------------------
 
     async def revoke_token(self, token: PermytAccessToken | RefreshToken) -> None:
-        # Revoke both access and refresh tokens for the client+user pair
-        if isinstance(token, PermytAccessToken):
-            db_token = await sync_to_async(
-                OAuthAccessToken.objects.filter(token=token.token).select_related("user").first
-            )()
-            if db_token:
-                await sync_to_async(
-                    OAuthAccessToken.objects.filter(
-                        client_id=token.client_id, user=db_token.user
-                    ).delete
-                )()
-                await sync_to_async(
-                    OAuthRefreshToken.objects.filter(
-                        client_id=token.client_id, user=db_token.user
-                    ).delete
-                )()
-        else:
-            db_token = await sync_to_async(
-                OAuthRefreshToken.objects.filter(token=token.token).select_related("user").first
-            )()
-            if db_token:
-                await sync_to_async(
-                    OAuthRefreshToken.objects.filter(
-                        client_id=token.client_id, user=db_token.user
-                    ).delete
-                )()
-                await sync_to_async(
-                    OAuthAccessToken.objects.filter(
-                        client_id=token.client_id, user=db_token.user
-                    ).delete
-                )()
+        """Revoke all access and refresh tokens for the client+user pair."""
+        model = OAuthAccessToken if isinstance(token, PermytAccessToken) else OAuthRefreshToken
+        db_token = await sync_to_async(
+            model.objects.filter(token=token.token).select_related("user").first
+        )()
+        if not db_token:
+            return
+
+        filters = {"client_id": token.client_id, "user": db_token.user}
+        await sync_to_async(OAuthAccessToken.objects.filter(**filters).delete)()
+        await sync_to_async(OAuthRefreshToken.objects.filter(**filters).delete)()

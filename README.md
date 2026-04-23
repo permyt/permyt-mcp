@@ -22,7 +22,7 @@ pip install -r requirements-dev.txt
 cp .env.example .env                       # fill in secrets
 python manage.py migrate
 python manage.py createsuperuser           # or use QR login
-python manage.py runserver 9020            # dev server (REST + QR + MCP SSE)
+python manage.py runserver 9020            # dev server (REST + QR + MCP)
 # Production:
 uvicorn settings.asgi:application --host 0.0.0.0 --port 9020
 ```

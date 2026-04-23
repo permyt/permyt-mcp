@@ -8,6 +8,7 @@ OAuthCallbackView: Creates authorization code after QR login, redirects to clien
 import secrets
 import time
 
+from django.contrib.auth import login
 from django.contrib.sessions.models import Session
 from django.http import HttpResponseBadRequest, HttpResponseRedirect
 from django.shortcuts import render
@@ -19,6 +20,7 @@ from app.core.requests.client import PermytClient
 from app.core.users.models import LoginToken
 
 from .models import OAuthAuthorizationCode, OAuthAuthorizationSession
+from .provider import AUTH_CODE_TTL
 
 
 class OAuthAuthorizeView(View):
@@ -44,12 +46,9 @@ class OAuthAuthorizeView(View):
             oauth_session.delete()
             return HttpResponseBadRequest("Authorization session expired.")
 
-        # Create Django session if needed
+        # Create Django session if needed (LoginToken requires a Session FK)
         if not request.session.session_key:
             request.session.create()
-
-        # Store OAuth session ID in Django session for callback
-        request.session["oauth_session_id"] = str(oauth_session.id)
 
         # Generate QR connect token (same flow as IndexView._login)
         session = Session.objects.get(session_key=request.session.session_key)
@@ -76,29 +75,55 @@ class OAuthAuthorizeView(View):
 class OAuthCallbackView(View):
     """Create OAuth authorization code after QR login and redirect to client.
 
-    GET /oauth/callback/
+    GET /oauth/callback/?login_id=<uuid>&session=<uuid>
 
     Called by JS after LoginStatusView reports authentication.
-    Uses the Django session to find the OAuth authorization session,
+    Authenticates the user via the LoginToken (passed as URL param to avoid
+    relying on session cookies from fetch responses in popup contexts),
     creates the authorization code, and redirects to the client's redirect_uri.
     """
 
-    def get(self, request):
-        if not request.user.is_authenticated:
-            return HttpResponseBadRequest("Not authenticated. Please complete QR login first.")
+    def _authenticate(self, request):
+        """Authenticate the user via LoginToken URL param or existing session."""
+        login_id = request.GET.get("login_id")
+        if login_id:
+            try:
+                token_obj = LoginToken.objects.select_related("user").get(id=login_id)
+            except LoginToken.DoesNotExist as exc:
+                raise ValueError("Invalid or expired login token.") from exc
 
-        oauth_session_id = request.session.get("oauth_session_id")
+            if not token_obj.user:
+                raise ValueError("QR login not completed.")
+
+            login(request, token_obj.user, backend="django.contrib.auth.backends.ModelBackend")
+            token_obj.delete()
+
+        if not request.user.is_authenticated:
+            raise ValueError("Not authenticated. Please complete QR login first.")
+
+    def _load_oauth_session(self, request):
+        """Load and validate the OAuth authorization session."""
+        oauth_session_id = request.GET.get("session")
         if not oauth_session_id:
-            return HttpResponseBadRequest("No OAuth session found.")
+            raise ValueError("No OAuth session found.")
 
         try:
             oauth_session = OAuthAuthorizationSession.objects.get(id=oauth_session_id)
-        except OAuthAuthorizationSession.DoesNotExist:
-            return HttpResponseBadRequest("Authorization session not found or expired.")
+        except OAuthAuthorizationSession.DoesNotExist as exc:
+            raise ValueError("Authorization session not found or expired.") from exc
 
         if oauth_session.is_expired():
             oauth_session.delete()
-            return HttpResponseBadRequest("Authorization session expired.")
+            raise ValueError("Authorization session expired.")
+
+        return oauth_session
+
+    def get(self, request):
+        try:
+            self._authenticate(request)
+            oauth_session = self._load_oauth_session(request)
+        except ValueError as exc:
+            return HttpResponseBadRequest(str(exc))
 
         user = request.user
         if not user.permyt_user_id:
@@ -118,7 +143,7 @@ class OAuthCallbackView(View):
             redirect_uri=oauth_session.redirect_uri,
             redirect_uri_provided_explicitly=oauth_session.redirect_uri_provided_explicitly,
             resource=oauth_session.resource,
-            expires_at=time.time() + 300,  # 5 minutes
+            expires_at=int(time.time()) + AUTH_CODE_TTL,
         )
 
         # Build redirect URI with code and state
@@ -130,6 +155,5 @@ class OAuthCallbackView(View):
 
         # Clean up
         oauth_session.delete()
-        del request.session["oauth_session_id"]
 
         return HttpResponseRedirect(redirect_uri)

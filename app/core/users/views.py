@@ -27,6 +27,12 @@ class LoginStatusView(APIView):
             return Response({"error": "Unknown login id."}, status=404)
 
         if token_obj.user:
+            # OAuth mode: don't consume the token here — the OAuthCallbackView
+            # will authenticate and clean up via a top-level navigation, which
+            # is more reliable for session cookies in popup/redirect contexts.
+            if request.query_params.get("mode") == "oauth":
+                return Response({"status": "authenticated"})
+
             login(request, token_obj.user, backend="django.contrib.auth.backends.ModelBackend")
 
             # Return system auth token for API/MCP use
