@@ -1,0 +1,42 @@
+# Python
+*.pyc
+*.pyo
+__pycache__
+.coverage
+venv
+env
+*.log
+
+# Django
+static
+media
+*.sqlite3
+
+# Keys & secrets
+*.pem
+*.pub
+.env
+keys/
+
+# IDE & editors
+.idea/
+.vscode
+.history
+*.sublime-*
+
+# System
+.DS_Store
+Thumbs.db
+*.icloud
+*.sock
+*.sock.lock
+*.dump
+
+# Git & cache
+.git
+.cache
+.pytest_cache
+.claude/
+
+# Docker
+Dockerfile

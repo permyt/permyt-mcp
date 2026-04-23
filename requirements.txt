@@ -1,0 +1,26 @@
+# Our library
+permyt==0.1.3                       # PERMYT SDK
+
+# Django
+Django==6.0.4                       # Django framework
+djangorestframework==3.17.1         # Django REST framework
+
+# Security & encryption
+joserfc==1.6.4                      # JWT/JWE cryptographic operations
+django-secured-fields==0.4.4        # Encrypted model fields
+django-axes==8.3.1                  # Brute force attack protection
+django-cors-headers==4.9.0          # CORS headers
+cryptography==46.0.7                # Cryptographic primitives
+
+# MCP
+mcp[cli]==1.27.0                    # Model Context Protocol SDK
+
+# ASGI server
+uvicorn==0.45.0                     # ASGI server for production (SSE transport)
+
+# Database & caching
+psycopg[binary]==3.3.3              # PostgreSQL adapter
+django-redis==6.0.0                 # Need for production, Used for redis-cache
+
+# Utilities
+python-dotenv==1.2.2                # Environment variable loading

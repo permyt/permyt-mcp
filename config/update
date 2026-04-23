@@ -1,0 +1,24 @@
+#!/bin/bash
+set -e
+
+# -----------------------------------------------------------------------------
+# Functions to update backend and frontend
+# -----------------------------------------------------------------------------
+
+
+update_app()
+{
+    cd /var/deployments/mcp
+    git pull
+    source env/bin/activate
+    pip install -r requirements.txt
+    python manage.py migrate
+    python manage.py collectstatic --no-input --clear
+    sudo supervisorctl restart permyt_mcp_app:*
+}
+
+# -----------------------------------------------------------------------------
+# Run update sequence
+# -----------------------------------------------------------------------------
+
+update_app
