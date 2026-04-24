@@ -87,7 +87,8 @@ permyt-mcp/
 | `CheckAccessView` | `app/core/requests/views.py` | REST endpoint: poll status, fetch data |
 | `PermytInboundView` | `app/core/requests/views.py` | Inbound webhook for PERMYT broker callbacks |
 | `IndexView` | `app/common/pages/views.py` | QR login / dashboard page |
-| `mcp` (FastMCP) | `app/mcp/server.py` | MCP server with 3 tools for AI agents |
+| `ViewScopesView` | `app/core/requests/views.py` | REST endpoint: view available scopes |
+| `mcp` (FastMCP) | `app/mcp/server.py` | MCP server with 4 tools for AI agents |
 | `create_mcp_app` | `app/mcp/server.py` | Factory for Streamable HTTP Starlette ASGI app |
 | `TokenRegenerateView` | `app/core/users/views.py` | Token revoke + regenerate endpoint |
 
@@ -103,13 +104,14 @@ permyt-mcp/
 - `POST /rest/auth/token/` — login, get DRF auth token
 - `POST /rest/requests/access/` — submit access request (token auth)
 - `POST /rest/requests/status/` — poll status / fetch data (token auth)
+- `POST /rest/requests/scopes/` — view available scopes (token auth)
 - `POST /rest/permyt/inbound/` — broker webhook (signed, no auth)
 - `GET /rest/login/status/?id=<id>` — QR login polling
 
 **MCP tools** (for Claude Code / Claude Desktop):
+- `permyt_view_scopes` — view available scopes
 - `permyt_request_access` — submit request
 - `permyt_check_access` — poll + fetch
-- `permyt_request_and_fetch` — submit + poll until resolved
 
 ### Request flow
 
