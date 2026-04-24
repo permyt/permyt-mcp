@@ -18,5 +18,8 @@ bandit==1.9.4                                   # a Python source code security 
 coverage==7.13.5                                # Tool for measuring code coverage of Python programs
 pylint==4.0.5                                   # Linter. Cannot update further without breaking integration with pylint-django
 pylint-django==2.7.0                            # Special linting for django
-pre-commit==4.2.0                               # Pre-commit hook framework
-vulture==2.16                                   # Find dead code
+pre-commit==4.6.0                               # Pre-commit hook framework
+vulture==2.16
+
+# Utilities
+pip-upgrader==2.4.4                   # Find dead code

@@ -5,6 +5,7 @@ OAuthAuthorizeView: Shows QR code for PERMYT mobile app login.
 OAuthCallbackView: Creates authorization code after QR login, redirects to client.
 """
 
+import json
 import logging
 import secrets
 import time
@@ -20,6 +21,7 @@ from mcp.server.auth.provider import construct_redirect_uri
 
 from app.core.requests.client import PermytClient
 from app.core.users.models import LoginToken
+from app.utils.qr import generate_qr_svg
 
 from .models import OAuthAuthorizationCode, OAuthAuthorizationSession
 from .provider import AUTH_CODE_TTL
@@ -64,12 +66,14 @@ class OAuthAuthorizeView(View):
             session=session,
         )
 
+        qr_svg = generate_qr_svg(json.dumps(connect["data"]))
+
         return render(
             request,
             "mcp/authorize.html",
             {
                 "login_id": str(token_obj.id),
-                "qr_data": connect["data"],
+                "qr_svg": qr_svg,
                 "oauth_session_id": str(oauth_session.id),
                 "title": "Authorize — PERMYT MCP",
             },

@@ -60,7 +60,11 @@ class PermytOAuthProvider:
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
         db_client = await sync_to_async(OAuthClient.objects.filter(client_id=client_id).first)()
         if not db_client:
+            logger.info(f"OAuth get_client: not found client_id={client_id[:12]}")
             return None
+        logger.info(
+            f"OAuth get_client: found client_id={client_id[:12]} name={db_client.client_name}"
+        )
 
         return OAuthClientInformationFull(
             client_id=db_client.client_id,
@@ -253,13 +257,20 @@ class PermytOAuthProvider:
     # -- Access token verification (dual auth) -----------------------------
 
     async def load_access_token(self, token: str) -> PermytAccessToken | None:
+        token_preview = token[:8] + "..." if len(token) > 8 else token
+
         # Try OAuth access token first
         db_token = await sync_to_async(
             OAuthAccessToken.objects.filter(token=token).select_related("user").first
         )()
         if db_token:
             if db_token.expires_at and db_token.expires_at < int(time.time()):
+                logger.info(f"OAuth load_access_token: expired token={token_preview}")
                 return None
+            logger.info(
+                f"OAuth load_access_token: valid OAuth token={token_preview} "
+                f"user={db_token.user.id} client={db_token.client_id[:12]}"
+            )
             return PermytAccessToken(
                 token=db_token.token,
                 client_id=db_token.client_id,
@@ -275,6 +286,9 @@ class PermytOAuthProvider:
                 Token.objects.filter(key=token).select_related("user").first
             )()
             if drf_token and drf_token.user.permyt_user_id:
+                logger.info(
+                    f"OAuth load_access_token: DRF fallback token={token_preview} user={drf_token.user.id}"
+                )
                 return PermytAccessToken(
                     token=token,
                     client_id="drf-legacy",
@@ -282,6 +296,7 @@ class PermytOAuthProvider:
                     user_id=str(drf_token.user.id),
                 )
 
+        logger.info(f"OAuth load_access_token: no match for token={token_preview}")
         return None
 
     # -- Token revocation --------------------------------------------------

@@ -156,11 +156,30 @@ async def _get_user_from_context(ctx: Context):
 def create_mcp_app():
     """Create the Starlette ASGI app for Streamable HTTP transport.
 
-    Returns a FastMCP Streamable HTTP app with OAuth auth routes.
+    Wraps the FastMCP app in CORS middleware so browser-based MCP clients
+    (and Claude AI's web interface) can reach the MCP endpoint.
+    The MCP SDK adds CORS to auth routes (token, register, revoke) but NOT
+    to the main MCP endpoint — we add it here.
+
+    Returns a Starlette ASGI app with OAuth auth routes + CORS.
     ASGI router strips /mcp prefix, so streamable_http_path="/" matches
     external /mcp path after stripping.
     """
-    return mcp.streamable_http_app()
+    from starlette.middleware.cors import CORSMiddleware
+
+    app = mcp.streamable_http_app()
+
+    app = CORSMiddleware(
+        app=app,
+        allow_origins=["*"],
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=["content-type", "authorization", "mcp-session-id", "mcp-protocol-version"],
+        expose_headers=["mcp-session-id", "mcp-protocol-version"],
+    )
+
+    tool_names = [t.name for t in mcp._tool_manager.list_tools()]
+    logger.info(f"MCP app created: {len(tool_names)} tools registered: {tool_names}")
+    return app
 
 
 # ---------------------------------------------------------------------------
