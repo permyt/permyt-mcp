@@ -23,6 +23,7 @@ from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, Re
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.server import Context
 from mcp.server.transport_security import TransportSecuritySettings
+from starlette.middleware.cors import CORSMiddleware
 
 from app.core.requests.client import PermytClient
 from app.core.users.authtoken.models import Token
@@ -31,6 +32,29 @@ from app.core.users.models import User
 from .provider import PermytOAuthProvider
 
 logger = logging.getLogger("console")
+
+# ---------------------------------------------------------------------------
+# Status messages for progress feedback during polling
+# ---------------------------------------------------------------------------
+
+STATUS_MESSAGES = {
+    "queued": "Request queued, waiting for broker...",
+    "analyzing": "Broker analyzing request and determining required permissions...",
+    "awaiting": "Waiting for user to approve on their PERMYT mobile app...",
+    "processing": "User approved! Issuing access tokens...",
+}
+
+FAILURE_MESSAGES = {
+    "rejected": "The user denied this request on their PERMYT app.",
+    "incomplete": (
+        "The broker couldn't determine what data you need. "
+        "Try again with a more specific description."
+    ),
+    "unavailable": (
+        "No connected provider can satisfy this request. "
+        "The user may not have the relevant service connected."
+    ),
+}
 
 MCP_INSTRUCTIONS = (
     "PERMYT lets you request access to user data held by external services "
@@ -165,10 +189,8 @@ def create_mcp_app():
     ASGI router strips /mcp prefix, so streamable_http_path="/" matches
     external /mcp path after stripping.
     """
-    from starlette.middleware.cors import CORSMiddleware
 
     app = mcp.streamable_http_app()
-
     app = CORSMiddleware(
         app=app,
         allow_origins=["*"],
@@ -219,7 +241,7 @@ async def permyt_request_access(description: str, ctx: Context = None) -> str:
 
 @mcp.tool()
 async def permyt_check_access(request_id: str, ctx: Context = None) -> str:
-    """Check status of a pending request and fetch data if approved.
+    """Check status of a pending request and fetch data if completed.
 
     Poll this after permyt_request_access. When the user approves,
     this automatically calls the provider(s) and returns the actual data.
@@ -229,16 +251,18 @@ async def permyt_check_access(request_id: str, ctx: Context = None) -> str:
 
     Returns:
         JSON with status. If completed, includes data from provider(s).
-        Statuses: pending (waiting for user), completed (data included),
-        rejected (user denied), incomplete (description too vague),
+        Statuses: queued (waiting for broker), analyzing (evaluating scopes),
+        awaiting (pending user approval), processing (issuing tokens),
+        completed (data included), rejected (user denied),
+        incomplete (description too vague),
         unavailable (no provider can satisfy this request).
     """
     client, _user = await _get_user_from_context(ctx)
 
     result = await asyncio.to_thread(client.check_access, request_id)
 
-    # If approved with services, call providers to get actual data
-    if result.get("status") == "approved" and result.get("services"):
+    # If completed with services, call providers to get actual data
+    if result.get("status") == "completed" and result.get("services"):
         try:
             data = await asyncio.to_thread(client.call_services, result["services"])
             return json.dumps(
@@ -294,9 +318,16 @@ async def permyt_request_and_fetch(
     if not request_id:
         return json.dumps({"error": "No request_id returned", "raw": status}, default=str)
 
+    # Report initial submission
+    if ctx:
+        await ctx.info(f"Request submitted (id: {request_id}). Polling for status...")
+        await ctx.report_progress(0, max_wait_seconds, "Request submitted, polling for status...")
+
     # Poll until resolved
-    terminal = {"approved", "denied", "rejected", "incomplete", "unavailable"}
-    deadline = time.time() + max_wait_seconds
+    terminal = {"completed", "rejected", "incomplete", "unavailable"}
+    start = time.time()
+    deadline = start + max_wait_seconds
+    last_status = None
 
     while time.time() < deadline:
         await asyncio.sleep(3)
@@ -304,9 +335,17 @@ async def permyt_request_and_fetch(
         result = await asyncio.to_thread(client.check_access, request_id)
         result_status = result.get("status")
 
+        # Report progress on status transitions
+        if ctx and result_status != last_status:
+            msg = STATUS_MESSAGES.get(result_status, f"Status: {result_status}")
+            elapsed = time.time() - start
+            await ctx.report_progress(elapsed, max_wait_seconds, msg)
+            await ctx.info(msg)
+            last_status = result_status
+
         if result_status in terminal:
-            # If approved with services, call providers
-            if result_status == "approved" and result.get("services"):
+            # If completed with services, call providers
+            if result_status == "completed" and result.get("services"):
                 try:
                     data = await asyncio.to_thread(client.call_services, result["services"])
                     return json.dumps(
@@ -329,11 +368,20 @@ async def permyt_request_and_fetch(
                     "request_id": request_id,
                     "status": result_status,
                     "reason": result.get("reason"),
+                    "message": FAILURE_MESSAGES.get(result_status),
                 },
                 default=str,
             )
 
     return json.dumps(
-        {"request_id": request_id, "status": "timeout"},
+        {
+            "request_id": request_id,
+            "status": "timeout",
+            "message": (
+                f"Timed out after {max_wait_seconds}s. The user may not have seen "
+                f"the approval prompt yet. You can continue polling with "
+                f"permyt_check_access using request_id '{request_id}'."
+            ),
+        },
         default=str,
     )

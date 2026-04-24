@@ -13,6 +13,14 @@ from app.mcp.server import (
 )
 
 
+def _make_async_ctx():
+    """Create a mock Context with async info/report_progress methods."""
+    ctx = MagicMock()
+    ctx.info = AsyncMock()
+    ctx.report_progress = AsyncMock()
+    return ctx
+
+
 @pytest.fixture
 def mock_client_and_user():
     """Return a mock (PermytClient, User) pair."""
@@ -56,7 +64,7 @@ class TestPermytCheckAccess:
         mock_get_user.return_value = (client, user)
         client.check_access.return_value = {
             "request_id": "req-1",
-            "status": "approved",
+            "status": "completed",
             "services": [{"endpoint": "..."}],
         }
         client.call_services.return_value = [{"data": "user notes"}]
@@ -73,7 +81,7 @@ class TestPermytCheckAccess:
         mock_get_user.return_value = (client, user)
         client.check_access.return_value = {
             "request_id": "req-1",
-            "status": "approved",
+            "status": "completed",
             "services": [{"endpoint": "..."}],
         }
         client.call_services.side_effect = RuntimeError("connection refused")
@@ -94,9 +102,11 @@ class TestPermytRequestAndFetch:
         client.request_access.return_value = {"request_id": "req-1", "status": "pending"}
         client.check_access.return_value = {"request_id": "req-1", "status": "pending"}
 
-        result = await permyt_request_and_fetch("read log", max_wait_seconds=1, ctx=MagicMock())
+        ctx = _make_async_ctx()
+        result = await permyt_request_and_fetch("read log", max_wait_seconds=1, ctx=ctx)
         data = json.loads(result)
         assert data["status"] == "timeout"
+        assert "message" in data
 
     @pytest.mark.asyncio
     @patch("app.mcp.server._get_user_from_context")
@@ -110,10 +120,12 @@ class TestPermytRequestAndFetch:
             "reason": "user denied",
         }
 
-        result = await permyt_request_and_fetch("read log", max_wait_seconds=10, ctx=MagicMock())
+        ctx = _make_async_ctx()
+        result = await permyt_request_and_fetch("read log", max_wait_seconds=10, ctx=ctx)
         data = json.loads(result)
         assert data["status"] == "rejected"
         assert data["reason"] == "user denied"
+        assert "message" in data
 
 
 class TestGetUserFromContext:
