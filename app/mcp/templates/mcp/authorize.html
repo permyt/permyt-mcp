@@ -36,12 +36,13 @@
       border-radius: 20px;
       padding: 48px;
       text-align: center;
-      max-width: 400px;
+      max-width: 520px;
     }
     h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 8px; letter-spacing: -0.02em; }
     .subtitle { color: rgba(255,255,255,0.5); margin-bottom: 32px; font-size: 0.95rem; }
     #qr-container { display: inline-block; padding: 16px; background: #fff; border-radius: 12px; }
     #qr-container img { display: block; }
+    #qr-container svg { width: 384px; height: 384px; display: block; }
     #status { margin-top: 24px; font-size: 0.9rem; color: rgba(255,255,255,0.4); }
     #status.authenticated { color: #a9d389; }
     #status.error { color: #ef4444; }
@@ -59,29 +60,14 @@
     <h1>PERMYT</h1>
     <p class="subtitle">Scan the QR code with your PERMYT app to authorize access.</p>
 
-    {{ qr_data|json_script:"qr-data" }}
-    <div id="qr-container"
-         data-login-id="{{ login_id }}"
-         data-oauth-session="{{ oauth_session_id }}"></div>
+    <div id="qr-container">{{ qr_svg|safe }}</div>
     <p id="status"><span class="spinner"></span> Waiting for scan&hellip;</p>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <script>
     document.addEventListener("DOMContentLoaded", function () {
-      var container = document.getElementById("qr-container");
-      var QR_DATA = document.getElementById("qr-data").textContent;
-      var LOGIN_ID = container.dataset.loginId;
-      var OAUTH_SESSION = container.dataset.oauthSession;
-
-      new QRCode(container, {
-        text: QR_DATA,
-        width: 256,
-        height: 256,
-        colorDark: "#20252b",
-        colorLight: "#ffffff",
-        correctLevel: QRCode.CorrectLevel.L,
-      });
+      var LOGIN_ID = "{{ login_id }}";
+      var OAUTH_SESSION = "{{ oauth_session_id }}";
 
       var polling = setInterval(function () {
         fetch("/rest/login/status/?id=" + encodeURIComponent(LOGIN_ID) + "&mode=oauth")

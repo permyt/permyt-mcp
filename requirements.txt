@@ -16,7 +16,7 @@ cryptography==46.0.7                # Cryptographic primitives
 mcp[cli]==1.27.0                    # Model Context Protocol SDK
 
 # ASGI server
-uvicorn==0.45.0                     # ASGI server for production (Streamable HTTP transport)
+uvicorn==0.46.0                     # ASGI server for production (Streamable HTTP transport)
 
 # Database & caching
 psycopg[binary]==3.3.3              # PostgreSQL adapter
@@ -24,3 +24,4 @@ django-redis==6.0.0                 # Need for production, Used for redis-cache
 
 # Utilities
 python-dotenv==1.2.2                # Environment variable loading
+qrcode==8.0                         # QR code SVG generation

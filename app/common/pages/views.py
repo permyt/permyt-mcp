@@ -1,3 +1,5 @@
+import json
+
 from django.conf import settings
 from django.contrib.sessions.models import Session
 from django.shortcuts import render
@@ -5,6 +7,7 @@ from django.views import View
 
 from app.core.requests.client import PermytClient
 from app.core.users.models import LoginToken
+from app.utils.qr import generate_qr_svg
 
 
 class IndexView(View):
@@ -33,12 +36,14 @@ class IndexView(View):
             session=session,
         )
 
+        qr_svg = generate_qr_svg(json.dumps(connect["data"]))
+
         return render(
             request,
             "pages/login/index.html",
             {
                 "login_id": str(token_obj.id),
-                "qr_data": connect["data"],
+                "qr_svg": qr_svg,
                 "title": "Login — PERMYT MCP",
             },
         )
