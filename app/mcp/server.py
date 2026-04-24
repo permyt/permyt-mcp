@@ -8,13 +8,11 @@ Supports two transport modes:
 Tools:
     permyt_request_access  — Submit natural-language data request
     permyt_check_access    — Poll status; if completed, fetch data from providers
-    permyt_request_and_fetch — Submit + poll until resolved (convenience)
 """
 
 import asyncio
 import json
 import logging
-import time
 
 from django.conf import settings
 
@@ -34,7 +32,7 @@ from .provider import PermytOAuthProvider
 logger = logging.getLogger("console")
 
 # ---------------------------------------------------------------------------
-# Status messages for progress feedback during polling
+# Status messages for user-facing feedback
 # ---------------------------------------------------------------------------
 
 STATUS_MESSAGES = {
@@ -45,14 +43,22 @@ STATUS_MESSAGES = {
 }
 
 FAILURE_MESSAGES = {
-    "rejected": "The user denied this request on their PERMYT app.",
+    "rejected": (
+        "The user denied this request on their PERMYT app. "
+        "Do not retry the same request. Ask the user if they'd like to "
+        "try a different approach or need something else."
+    ),
     "incomplete": (
-        "The broker couldn't determine what data you need. "
-        "Try again with a more specific description."
+        "The broker couldn't determine what data you need from your description. "
+        "Ask the user to clarify what specific data they want (e.g. which account, "
+        "what time period, what document) and submit a new request with "
+        "permyt_request_access using a more detailed description."
     ),
     "unavailable": (
-        "No connected provider can satisfy this request. "
-        "The user may not have the relevant service connected."
+        "No connected provider can satisfy this request. The user may not have "
+        "the relevant service connected to PERMYT. Let the user know and ask if "
+        "they have another way to provide the data, or if they'd like to connect "
+        "the service first via the PERMYT mobile app."
     ),
 }
 
@@ -60,25 +66,40 @@ MCP_INSTRUCTIONS = (
     "PERMYT lets you request access to user data held by external services "
     "(banks, healthcare, employers, etc.) on behalf of the user.\n\n"
     "HOW IT WORKS:\n"
-    "- Describe what data you need in plain language. You do NOT need to know "
-    "what services or providers the user has connected — the PERMYT broker's AI "
-    "figures out which provider(s) can satisfy your request and what minimal "
-    "permissions are needed.\n"
-    "- The user sees a summary of your request on their PERMYT mobile app and "
-    "chooses to approve or deny it.\n"
-    "- If approved, you receive the actual data from the provider(s).\n\n"
+    "0. (Optional) Call permyt_view_scopes to see what data is available "
+    "before making a request. This returns services and their scopes "
+    "(data types) the user has connected.\n"
+    "1. Call permyt_request_access with a plain-language description of the data "
+    "you need. This returns a request_id immediately.\n"
+    "2. Tell the user you're waiting for their approval on the PERMYT mobile app.\n"
+    "3. Poll permyt_check_access with the request_id every few seconds. Each call "
+    "returns the current status so you can keep the user informed:\n"
+    "   - queued: request received, waiting for broker\n"
+    "   - analyzing: broker AI is evaluating required permissions\n"
+    "   - awaiting: user has been notified, waiting for their approval\n"
+    "   - processing: user approved, issuing access tokens\n"
+    "   - completed: data is included in the response\n"
+    "4. When status is 'completed', the data from the provider(s) is included "
+    "in the response. Present it to the user.\n\n"
+    "HANDLING FAILURES:\n"
+    "- incomplete: Your description was too vague for the broker to determine "
+    "what data you need. Ask the user to clarify (which account? what time period? "
+    "what document?) and submit a NEW request with a more detailed description.\n"
+    "- unavailable: No provider the user has connected can satisfy this request. "
+    "Tell the user — they may need to connect the relevant service via the "
+    "PERMYT mobile app first.\n"
+    "- rejected: The user denied the request. Do NOT retry the same request. "
+    "Ask if they'd like something different.\n\n"
     "TIPS:\n"
-    "- Be specific in your description. 'Read the user's latest bank statement' "
+    "- Use permyt_view_scopes first to understand what data is available, then "
+    "craft a precise description for permyt_request_access.\n"
+    "- Be specific. 'Read the user's latest bank statement for March 2025' "
     "works better than 'get financial data'.\n"
-    "- If a request returns 'unavailable', no connected provider can satisfy it — "
-    "this is normal, not an error.\n"
-    "- If a request returns 'incomplete', the broker couldn't extract required "
-    "parameters from your description. Try being more specific.\n"
-    "- Use permyt_request_and_fetch for simple one-shot requests.\n"
-    "- Use permyt_request_access + permyt_check_access separately when you want "
-    "to do other work while waiting for user approval.\n"
-    "- The user must approve on their mobile device — tell them you're waiting "
-    "for their approval if using the polling approach."
+    "- Tell the user what's happening at each status change — especially when "
+    "status is 'awaiting', so they know to check their PERMYT mobile app.\n"
+    "- Keep polling until you reach a terminal status (completed, rejected, "
+    "incomplete, unavailable). Non-terminal statuses mean the request is still "
+    "being processed."
 )
 
 
@@ -240,6 +261,34 @@ async def permyt_request_access(description: str, ctx: Context = None) -> str:
 
 
 @mcp.tool()
+async def permyt_view_scopes(ctx: Context = None) -> str:
+    """View available data scopes the user has connected to PERMYT.
+
+    Returns the list of services and their scopes (data types) that can be
+    requested via permyt_request_access. Use this to understand what data
+    is available before making a request.
+
+    Each scope includes a name, description, and any required inputs
+    that will be locked at approval time.
+    """
+    client, user = await _get_user_from_context(ctx)
+
+    try:
+        result = await asyncio.to_thread(client.view_scopes, str(user.permyt_user_id))
+    except Exception as exc:
+        logger.error(f"view_scopes failed: {exc}", exc_info=True)
+        return json.dumps(
+            {"status": "error", "message": "Failed to retrieve available scopes."},
+            default=str,
+        )
+
+    return json.dumps(result, default=str)
+
+
+TERMINAL_STATUSES = {"completed", "rejected", "incomplete", "unavailable"}
+
+
+@mcp.tool()
 async def permyt_check_access(request_id: str, ctx: Context = None) -> str:
     """Check status of a pending request and fetch data if completed.
 
@@ -250,7 +299,7 @@ async def permyt_check_access(request_id: str, ctx: Context = None) -> str:
         request_id: The request_id from permyt_request_access.
 
     Returns:
-        JSON with status. If completed, includes data from provider(s).
+        JSON with status and message. If completed, includes data from provider(s).
         Statuses: queued (waiting for broker), analyzing (evaluating scopes),
         awaiting (pending user approval), processing (issuing tokens),
         completed (data included), rejected (user denied),
@@ -260,9 +309,10 @@ async def permyt_check_access(request_id: str, ctx: Context = None) -> str:
     client, _user = await _get_user_from_context(ctx)
 
     result = await asyncio.to_thread(client.check_access, request_id)
+    status = result.get("status")
 
     # If completed with services, call providers to get actual data
-    if result.get("status") == "completed" and result.get("services"):
+    if status == "completed" and result.get("services"):
         try:
             data = await asyncio.to_thread(client.call_services, result["services"])
             return json.dumps(
@@ -275,113 +325,29 @@ async def permyt_check_access(request_id: str, ctx: Context = None) -> str:
                 {
                     "request_id": request_id,
                     "status": "error",
-                    "error": "Failed to fetch data from provider.",
+                    "message": "Failed to fetch data from provider.",
                 },
                 default=str,
             )
 
-    return json.dumps(result, default=str)
+    # Terminal failure — include actionable message
+    if status in FAILURE_MESSAGES:
+        return json.dumps(
+            {
+                "request_id": request_id,
+                "status": status,
+                "reason": result.get("reason"),
+                "message": FAILURE_MESSAGES[status],
+            },
+            default=str,
+        )
 
-
-@mcp.tool()
-async def permyt_request_and_fetch(
-    description: str, max_wait_seconds: int = 120, ctx: Context = None
-) -> str:
-    """Request user data and wait for the result in one step.
-
-    Best for simple requests. Submits the request, then polls until the
-    user approves/denies on their PERMYT mobile app or timeout is reached.
-
-    Tell the user you're waiting for their approval while this runs.
-
-    Args:
-        description: What data you need, in natural language. Be specific.
-                     Good: "Read the user's mission log"
-                     Good: "Get the user's health insurance policy number"
-        max_wait_seconds: How long to wait for user approval (default 120).
-
-    Returns:
-        JSON with status and data (if approved), or timeout/rejection reason.
-    """
-    client, user = await _get_user_from_context(ctx)
-
-    # Submit request
-    status = await asyncio.to_thread(
-        client.request_access,
-        {
-            "user_id": str(user.permyt_user_id),
-            "description": description,
-        },
-    )
-
-    request_id = status.get("request_id")
-    if not request_id:
-        return json.dumps({"error": "No request_id returned", "raw": status}, default=str)
-
-    # Report initial submission
-    if ctx:
-        await ctx.info(f"Request submitted (id: {request_id}). Polling for status...")
-        await ctx.report_progress(0, max_wait_seconds, "Request submitted, polling for status...")
-
-    # Poll until resolved
-    terminal = {"completed", "rejected", "incomplete", "unavailable"}
-    start = time.time()
-    deadline = start + max_wait_seconds
-    last_status = None
-
-    while time.time() < deadline:
-        await asyncio.sleep(3)
-
-        result = await asyncio.to_thread(client.check_access, request_id)
-        result_status = result.get("status")
-
-        # Report progress on status transitions
-        if ctx and result_status != last_status:
-            msg = STATUS_MESSAGES.get(result_status, f"Status: {result_status}")
-            elapsed = time.time() - start
-            await ctx.report_progress(elapsed, max_wait_seconds, msg)
-            await ctx.info(msg)
-            last_status = result_status
-
-        if result_status in terminal:
-            # If completed with services, call providers
-            if result_status == "completed" and result.get("services"):
-                try:
-                    data = await asyncio.to_thread(client.call_services, result["services"])
-                    return json.dumps(
-                        {"request_id": request_id, "status": "completed", "data": data},
-                        default=str,
-                    )
-                except Exception as exc:
-                    logger.error(f"request_and_fetch call_services failed: {exc}", exc_info=True)
-                    return json.dumps(
-                        {
-                            "request_id": request_id,
-                            "status": "error",
-                            "error": "Failed to fetch data from provider.",
-                        },
-                        default=str,
-                    )
-
-            return json.dumps(
-                {
-                    "request_id": request_id,
-                    "status": result_status,
-                    "reason": result.get("reason"),
-                    "message": FAILURE_MESSAGES.get(result_status),
-                },
-                default=str,
-            )
+    # Intermediate status — include progress message + polling hint
+    message = STATUS_MESSAGES.get(status, f"Status: {status}")
+    if status not in TERMINAL_STATUSES:
+        message += " Poll again with permyt_check_access."
 
     return json.dumps(
-        {
-            "request_id": request_id,
-            "status": "timeout",
-            "message": (
-                f"Timed out after {max_wait_seconds}s. The user may not have seen "
-                f"the approval prompt yet. You can continue polling with "
-                f"permyt_check_access using request_id '{request_id}'."
-            ),
-        },
+        {"request_id": request_id, "status": status, "message": message},
         default=str,
     )

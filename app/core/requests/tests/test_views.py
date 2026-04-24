@@ -129,6 +129,42 @@ class TestCheckAccessView:
         assert response.data["data"] == [{"mission_log": "Day 1..."}]
 
 
+class TestViewScopesView:
+    @pytest.mark.django_db
+    def test_unauthenticated_rejected(self, api_client):
+        response = api_client.post("/rest/requests/scopes/", format="json")
+        assert response.status_code == 401
+
+    @pytest.mark.django_db
+    def test_user_without_permyt_id_rejected(self, api_client, db):
+        user = UserFactory(permyt_user_id=None)
+        token, _ = Token.objects.get_or_create(user=user)
+        api_client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+        response = api_client.post("/rest/requests/scopes/", format="json")
+        assert response.status_code == 400
+        assert "permyt_user_id" in response.data["error"]
+
+    @pytest.mark.django_db
+    @patch("app.core.requests.views.PermytClient")
+    def test_successful_request(self, MockClient, auth_client):
+        client, user = auth_client
+        mock_instance = MockClient.return_value
+        mock_instance.view_scopes.return_value = {
+            "scopes": [
+                {
+                    "service_name": "NoteVault",
+                    "service_description": "Secure notes",
+                    "scopes": [{"reference": "notes.read", "name": "Read Notes"}],
+                }
+            ]
+        }
+
+        response = client.post("/rest/requests/scopes/", format="json")
+        assert response.status_code == 200
+        assert len(response.data["scopes"]) == 1
+        assert response.data["scopes"][0]["service_name"] == "NoteVault"
+
+
 class TestPermytInboundView:
     @pytest.mark.django_db
     @patch("app.core.requests.views.PermytClient")

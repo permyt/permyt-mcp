@@ -91,6 +91,32 @@ class CheckAccessView(APIView):
         return Response(result)
 
 
+class ViewScopesView(APIView):
+    """View available scopes across all providers connected to the authenticated user."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        if not user.permyt_user_id:
+            return Response(
+                {"error": "User has no permyt_user_id. Please connect via QR login first."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        client = PermytClient()
+        try:
+            result = client.view_scopes(str(user.permyt_user_id))  # pylint: disable=no-member
+        except Exception as exc:
+            logger.error(f"view_scopes failed: {exc}", exc_info=True)
+            return Response(
+                {"error": "An upstream service error occurred. Please try again."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        return Response(result)
+
+
 class PermytInboundView(APIView):
     """
     Webhook endpoint for PERMYT broker callbacks.
