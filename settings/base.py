@@ -241,7 +241,11 @@ REQUESTER_CALLBACK_URL = os.environ.get("REQUESTER_CALLBACK_URL", BASE_URL + "/r
 # MCP OAuth
 MCP_ISSUER_URL = os.environ.get("MCP_ISSUER_URL", BASE_URL.rstrip("/") + "/mcp")
 MCP_SERVER_URL = os.environ.get("MCP_SERVER_URL", BASE_URL.rstrip("/") + "/mcp")
-DISABLE_DRF_TOKEN_FALLBACK = os.environ.get("DISABLE_DRF_TOKEN_FALLBACK", "false").lower() in ("true", "1", "yes")
+DISABLE_DRF_TOKEN_FALLBACK = os.environ.get("DISABLE_DRF_TOKEN_FALLBACK", "false").lower() in (
+    "true",
+    "1",
+    "yes",
+)
 
 
 # Local settings

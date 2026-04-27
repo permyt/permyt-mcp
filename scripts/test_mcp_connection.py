@@ -24,7 +24,6 @@ import sys
 import urllib.request
 import urllib.error
 
-
 PASS = "\033[92mPASS\033[0m"
 FAIL = "\033[91mFAIL\033[0m"
 WARN = "\033[93mWARN\033[0m"
@@ -48,7 +47,11 @@ def request(url, method="GET", data=None, headers=None, follow_redirects=False):
         def redirect_request(self, *args, **kwargs):
             return None
 
-    opener = urllib.request.build_opener(NoRedirect) if not follow_redirects else urllib.request.build_opener()
+    opener = (
+        urllib.request.build_opener(NoRedirect)
+        if not follow_redirects
+        else urllib.request.build_opener()
+    )
 
     try:
         resp = opener.open(req)
@@ -116,8 +119,11 @@ def test_authorization_server_metadata(base_url):
         return None
 
     required_fields = [
-        "issuer", "authorization_endpoint", "token_endpoint",
-        "response_types_supported", "code_challenge_methods_supported",
+        "issuer",
+        "authorization_endpoint",
+        "token_endpoint",
+        "response_types_supported",
+        "code_challenge_methods_supported",
     ]
     for field in required_fields:
         val = data.get(field)
@@ -228,9 +234,15 @@ def test_cors_preflight(base_url):
     )
     print(f"   Status: {status}")
 
-    acao = headers.get("Access-Control-Allow-Origin", headers.get("access-control-allow-origin", ""))
-    acam = headers.get("Access-Control-Allow-Methods", headers.get("access-control-allow-methods", ""))
-    acah = headers.get("Access-Control-Allow-Headers", headers.get("access-control-allow-headers", ""))
+    acao = headers.get(
+        "Access-Control-Allow-Origin", headers.get("access-control-allow-origin", "")
+    )
+    acam = headers.get(
+        "Access-Control-Allow-Methods", headers.get("access-control-allow-methods", "")
+    )
+    acah = headers.get(
+        "Access-Control-Allow-Headers", headers.get("access-control-allow-headers", "")
+    )
 
     if status == 200 and acao:
         print(f"   Access-Control-Allow-Origin: {acao}")
@@ -283,7 +295,9 @@ def test_authorize_redirect(base_url, authorization_endpoint, client_id):
 
             # Check for problematic headers
             xfo = headers2.get("X-Frame-Options") or headers2.get("x-frame-options", "")
-            coop = headers2.get("Cross-Origin-Opener-Policy") or headers2.get("cross-origin-opener-policy", "")
+            coop = headers2.get("Cross-Origin-Opener-Policy") or headers2.get(
+                "cross-origin-opener-policy", ""
+            )
             cookie = headers2.get("Set-Cookie") or headers2.get("set-cookie", "")
 
             if xfo:
@@ -392,7 +406,9 @@ def test_authenticated_mcp(base_url, token):
         )
         print(f"   tools/list status: {status2}")
 
-        if "text/event-stream" in (headers2.get("Content-Type") or headers2.get("content-type", "")):
+        if "text/event-stream" in (
+            headers2.get("Content-Type") or headers2.get("content-type", "")
+        ):
             for line in body2.split("\n"):
                 if line.startswith("data:"):
                     data_str = line[5:].strip()
@@ -416,8 +432,12 @@ def test_authenticated_mcp(base_url, token):
 
 def main():
     parser = argparse.ArgumentParser(description="Test MCP server connectivity")
-    parser.add_argument("base_url", nargs="?", default="https://mcp.permyt.io",
-                        help="Base URL of the MCP server (default: https://mcp.permyt.io)")
+    parser.add_argument(
+        "base_url",
+        nargs="?",
+        default="https://mcp.permyt.io",
+        help="Base URL of the MCP server (default: https://mcp.permyt.io)",
+    )
     parser.add_argument("--token", help="Auth token for authenticated MCP testing")
     args = parser.parse_args()
 

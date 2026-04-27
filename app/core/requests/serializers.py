@@ -7,3 +7,8 @@ class RequestAccessSerializer(serializers.Serializer):
 
 class CheckAccessSerializer(serializers.Serializer):
     request_id = serializers.CharField(max_length=256)
+
+
+class CallServiceSerializer(serializers.Serializer):
+    request_id = serializers.CharField(max_length=256)
+    inputs = serializers.DictField(required=False, allow_empty=True)

@@ -24,8 +24,23 @@ class PermytClient(BasePermytClient):
 
     DEFAULT_CALLBACK_URL = settings.REQUESTER_CALLBACK_URL
 
+    # Dynamic per-call inputs supplied by the AI through ``permyt_call_service``.
+    # Read by ``_prepare_data_for_endpoint`` when ``call_services`` runs. Class
+    # default is empty so existing read-scope flows behave as before.
+    _endpoint_inputs: dict[str, Any] = {}
+
     def __init__(self):
         super().__init__(host=settings.PERMYT_HOST)
+        self._endpoint_inputs = {}
+
+    def set_endpoint_inputs(self, inputs: dict[str, Any] | None) -> None:
+        """Set the dynamic inputs applied to every endpoint of the next ``call_services``.
+
+        The same dict is used for every endpoint of the approved request — the
+        provider validates and ignores extras. Pass ``None`` or ``{}`` for
+        scopes that declare no dynamic inputs.
+        """
+        self._endpoint_inputs = dict(inputs) if inputs else {}
 
     # ------------------------------------------------------------------
     # Identity
@@ -67,9 +82,13 @@ class PermytClient(BasePermytClient):
         self, request_id: str, endpoint: ServiceCallEndpoint
     ) -> dict[str, Any]:
         """Build the payload for a single provider endpoint call.
-        Returns empty dict — inputs are locked by the broker.
+
+        Returns the dynamic inputs set via :meth:`set_endpoint_inputs` (empty
+        dict by default). Locked/force inputs are enforced by the provider
+        from the token's :class:`~permyt.typing.ScopeGrant`; only dynamic
+        fields declared in ``endpoint["input_fields"]`` flow through here.
         """
-        return {}
+        return dict(self._endpoint_inputs)
 
     # ------------------------------------------------------------------
     # User connect (QR-login)
@@ -113,16 +132,10 @@ class PermytClient(BasePermytClient):
     # ------------------------------------------------------------------
 
     def process_request_status(self, data: dict[str, Any]) -> dict[str, Any] | None:
-        """Handle status callbacks pushed by the broker.
+        """Acknowledge a broker status callback.
 
-        On ``completed``, calls provider endpoints.
+        Provider calls are deferred to ``permyt_call_service`` (which the AI
+        invokes after ``permyt_check_access`` reports ``completed``) so dynamic
+        inputs can be supplied. The webhook just acknowledges receipt.
         """
-        data = data or {}
-        status = data.get("status")
-
-        if status == "completed":
-            services = data.get("services") or []
-            if services:
-                self.call_services(services)
-
         return {"received": True}
