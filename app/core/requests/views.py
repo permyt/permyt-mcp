@@ -6,9 +6,27 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .client import PermytClient
-from .serializers import RequestAccessSerializer, CheckAccessSerializer
+from .responses import (
+    CONSUME_ERROR_MESSAGES,
+    consume_pending_service_call,
+    endpoint_schema,
+    error_envelope,
+    flatten_service_data,
+    store_pending_service_call,
+)
+from .serializers import (
+    CallServiceSerializer,
+    CheckAccessSerializer,
+    RequestAccessSerializer,
+)
 
 logger = logging.getLogger("console")
+
+
+COMPLETED_MESSAGE = (
+    "User approved. Call /rest/requests/call/ with the dynamic input values "
+    "parsed from the user's original request to execute."
+)
 
 
 class RequestAccessView(APIView):
@@ -35,18 +53,15 @@ class RequestAccessView(APIView):
                     "description": serializer.validated_data["description"],
                 }
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.error(f"request_access failed: {exc}", exc_info=True)
-            return Response(
-                {"error": "An upstream service error occurred. Please try again."},
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
+            return Response(error_envelope(exc), status=status.HTTP_502_BAD_GATEWAY)
 
         return Response(result)
 
 
 class CheckAccessView(APIView):
-    """Check status of a pending access request. If completed, calls providers."""
+    """Poll request status. On ``completed`` returns the call_service schema (no auto-execute)."""
 
     permission_classes = [IsAuthenticated]
 
@@ -55,40 +70,82 @@ class CheckAccessView(APIView):
         serializer.is_valid(raise_exception=True)
 
         request_id = serializer.validated_data["request_id"]
+        user = request.user
         client = PermytClient()
 
         try:
             result = client.check_access(request_id)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.error(f"check_access failed: {exc}", exc_info=True)
+            return Response(error_envelope(exc), status=status.HTTP_502_BAD_GATEWAY)
+
+        if result.get("status") == "completed":
+            services = result.get("services") or []
+            try:
+                store_pending_service_call(request_id, user, services)
+            except Exception as exc:  # noqa: BLE001
+                logger.error(f"check_access storage failed: {exc}", exc_info=True)
+                return Response(error_envelope(exc), status=status.HTTP_502_BAD_GATEWAY)
+
             return Response(
-                {"error": "An upstream service error occurred. Please try again."},
-                status=status.HTTP_502_BAD_GATEWAY,
+                {
+                    "request_id": request_id,
+                    "status": "completed",
+                    "endpoints": endpoint_schema(services),
+                    "next_action": "/rest/requests/call/",
+                    "message": COMPLETED_MESSAGE,
+                }
             )
 
-        # If approved with services, call providers to get actual data
-        if result.get("status") == "approved" and result.get("services"):
-            try:
-                data = client.call_services(result["services"])
-                return Response(
-                    {
-                        "request_id": request_id,
-                        "status": "completed",
-                        "data": data,
-                    }
-                )
-            except Exception as exc:
-                logger.error(f"call_services failed: {exc}", exc_info=True)
-                return Response(
-                    {
-                        "request_id": request_id,
-                        "status": "error",
-                        "error": "Failed to fetch data from provider.",
-                    },
-                    status=status.HTTP_502_BAD_GATEWAY,
-                )
-
         return Response(result)
+
+
+class CallServiceView(APIView):
+    """Execute the approved request with dynamic inputs and return the provider response."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = CallServiceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        request_id = serializer.validated_data["request_id"]
+        inputs = serializer.validated_data.get("inputs") or {}
+        user = request.user
+
+        try:
+            pending = consume_pending_service_call(request_id, user)
+        except LookupError as exc:
+            code = str(exc)
+            return Response(
+                {
+                    "request_id": request_id,
+                    "status": "error",
+                    "code": code,
+                    "message": CONSUME_ERROR_MESSAGES.get(code, "Cannot execute this request."),
+                    "retryable": False,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        client = PermytClient()
+        client.set_endpoint_inputs(inputs)
+
+        try:
+            raw_data = client.call_services(pending.services)
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"call_service failed: {exc}", exc_info=True)
+            envelope = error_envelope(exc)
+            envelope["request_id"] = request_id
+            return Response(envelope, status=status.HTTP_502_BAD_GATEWAY)
+
+        return Response(
+            {
+                "request_id": request_id,
+                "status": "completed",
+                "data": flatten_service_data(raw_data),
+            }
+        )
 
 
 class ViewScopesView(APIView):
@@ -107,12 +164,9 @@ class ViewScopesView(APIView):
         client = PermytClient()
         try:
             result = client.view_scopes(str(user.permyt_user_id))  # pylint: disable=no-member
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.error(f"view_scopes failed: {exc}", exc_info=True)
-            return Response(
-                {"error": "An upstream service error occurred. Please try again."},
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
+            return Response(error_envelope(exc), status=status.HTTP_502_BAD_GATEWAY)
 
         return Response(result)
 

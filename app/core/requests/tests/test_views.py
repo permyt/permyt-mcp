@@ -3,10 +3,14 @@ Tests for the REST API views.
 """
 
 import uuid
-from unittest.mock import patch, MagicMock
+from datetime import timedelta
+from unittest.mock import MagicMock, patch
 
 import pytest
+from django.utils import timezone
 from rest_framework.test import APIClient
+
+from app.core.requests.models import PendingServiceCall
 from app.core.users.authtoken.models import Token
 from app.core.users.factories import UserFactory
 
@@ -28,6 +32,22 @@ def auth_client(api_client, authenticated_user):
     user, token = authenticated_user
     api_client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
     return api_client, user
+
+
+def _service_credential(expires_at):
+    return {
+        "request_id": "req-123",
+        "encrypted_token": "ciphertext",
+        "endpoints": [
+            {
+                "url": "https://provider.example/api/x",
+                "description": "Send a payment",
+                "input_fields": {"account": "IBAN", "value": "Amount"},
+            }
+        ],
+        "expires_at": expires_at.isoformat(),
+        "public_key": "----- PUBLIC -----",
+    }
 
 
 class TestRequestAccessView:
@@ -109,15 +129,17 @@ class TestCheckAccessView:
 
     @pytest.mark.django_db
     @patch("app.core.requests.views.PermytClient")
-    def test_approved_calls_services(self, MockClient, auth_client):
-        client, _ = auth_client
+    def test_completed_returns_endpoint_schema_and_does_not_auto_call(
+        self, MockClient, auth_client
+    ):
+        client, user = auth_client
         mock_instance = MockClient.return_value
+        services = [_service_credential(timezone.now() + timedelta(minutes=5))]
         mock_instance.check_access.return_value = {
             "request_id": "req-123",
-            "status": "approved",
-            "services": [{"encrypted_token": "...", "endpoints": []}],
+            "status": "completed",
+            "services": services,
         }
-        mock_instance.call_services.return_value = [{"mission_log": "Day 1..."}]
 
         response = client.post(
             "/rest/requests/status/",
@@ -126,7 +148,86 @@ class TestCheckAccessView:
         )
         assert response.status_code == 200
         assert response.data["status"] == "completed"
-        assert response.data["data"] == [{"mission_log": "Day 1..."}]
+        assert response.data["next_action"] == "/rest/requests/call/"
+        assert response.data["endpoints"] == [
+            {
+                "description": "Send a payment",
+                "input_fields": {"account": "IBAN", "value": "Amount"},
+            }
+        ]
+        mock_instance.call_services.assert_not_called()
+        assert PendingServiceCall.objects.filter(request_id="req-123", user=user).exists()
+
+
+class TestCallServiceView:
+    @pytest.mark.django_db
+    def test_unauthenticated_rejected(self, api_client):
+        response = api_client.post(
+            "/rest/requests/call/",
+            {"request_id": "req-123", "inputs": {}},
+            format="json",
+        )
+        assert response.status_code == 401
+
+    @pytest.mark.django_db
+    @patch("app.core.requests.views.PermytClient")
+    def test_executes_with_dynamic_inputs_and_marks_consumed(self, MockClient, auth_client):
+        client, user = auth_client
+        services = [_service_credential(timezone.now() + timedelta(minutes=5))]
+        PendingServiceCall.objects.create(
+            request_id="req-123",
+            user=user,
+            services=services,
+            expires_at=timezone.now() + timedelta(minutes=5),
+        )
+        mock_instance = MockClient.return_value
+        mock_instance.call_services.return_value = [{"payment.send": {"ok": True}}]
+
+        inputs = {"account": "PT50…", "value": "50.00"}
+        response = client.post(
+            "/rest/requests/call/",
+            {"request_id": "req-123", "inputs": inputs},
+            format="json",
+        )
+
+        assert response.status_code == 200
+        assert response.data["status"] == "completed"
+        assert response.data["data"] == [{"scope": "payment.send", "data": {"ok": True}}]
+        mock_instance.set_endpoint_inputs.assert_called_once_with(inputs)
+        mock_instance.call_services.assert_called_once_with(services)
+
+        pending = PendingServiceCall.objects.get(request_id="req-123")
+        assert pending.consumed_at is not None
+
+    @pytest.mark.django_db
+    def test_unknown_request_returns_error(self, auth_client):
+        client, _ = auth_client
+        response = client.post(
+            "/rest/requests/call/",
+            {"request_id": "missing", "inputs": {}},
+            format="json",
+        )
+        assert response.status_code == 400
+        assert response.data["code"] == "unknown_request"
+
+    @pytest.mark.django_db
+    def test_already_consumed_rejected(self, auth_client):
+        client, user = auth_client
+        services = [_service_credential(timezone.now() + timedelta(minutes=5))]
+        PendingServiceCall.objects.create(
+            request_id="req-123",
+            user=user,
+            services=services,
+            expires_at=timezone.now() + timedelta(minutes=5),
+            consumed_at=timezone.now(),
+        )
+        response = client.post(
+            "/rest/requests/call/",
+            {"request_id": "req-123", "inputs": {}},
+            format="json",
+        )
+        assert response.status_code == 400
+        assert response.data["code"] == "already_consumed"
 
 
 class TestViewScopesView:
