@@ -32,35 +32,64 @@ from .provider import PermytOAuthProvider
 logger = logging.getLogger("console")
 
 # ---------------------------------------------------------------------------
-# Status messages for user-facing feedback
+# Status messages — user-facing only (no LLM/client instructions)
 # ---------------------------------------------------------------------------
 
 STATUS_MESSAGES = {
     "queued": "Request queued, waiting for broker...",
-    "analyzing": "Broker analyzing request and determining required permissions...",
+    "analyzing": "Analyzing request and determining required permissions...",
     "awaiting": "Waiting for user to approve on their PERMYT mobile app...",
     "processing": "User approved! Issuing access tokens...",
 }
 
-FAILURE_MESSAGES = {
-    "rejected": (
-        "The user denied this request on their PERMYT app. "
-        "Do not retry the same request. Ask the user if they'd like to "
-        "try a different approach or need something else."
+CLIENT_HINTS = {
+    "queued": "Poll permyt_check_access in a few seconds.",
+    "analyzing": "Poll permyt_check_access in a few seconds.",
+    "awaiting": (
+        "Poll permyt_check_access every few seconds. "
+        "Tell the user to check their PERMYT mobile app."
     ),
-    "incomplete": (
-        "The broker couldn't determine what data you need from your description. "
-        "Ask the user to clarify what specific data they want (e.g. which account, "
-        "what time period, what document) and submit a new request with "
-        "permyt_request_access using a more detailed description."
-    ),
-    "unavailable": (
-        "No connected provider can satisfy this request. The user may not have "
-        "the relevant service connected to PERMYT. Let the user know and ask if "
-        "they have another way to provide the data, or if they'd like to connect "
-        "the service first via the PERMYT mobile app."
+    "processing": (
+        "Poll permyt_check_access in a few seconds. "
+        "Data will be included when status is completed."
     ),
 }
+
+FAILURE_MESSAGES = {
+    "rejected": {
+        "message": "The user denied this request on their PERMYT app.",
+        "client_hint": (
+            "Do not retry the same request. Ask the user if they'd like a different approach."
+        ),
+    },
+    "incomplete": {
+        "message": "The request description was too vague to determine what data is needed.",
+        "client_hint": (
+            "Ask the user to clarify what specific data they want "
+            "and submit a new, more detailed request."
+        ),
+    },
+    "unavailable": {
+        "message": "No connected service can provide the requested data.",
+        "client_hint": (
+            "Let the user know. They may need to connect "
+            "the relevant service via the PERMYT mobile app."
+        ),
+    },
+}
+
+
+def _flatten_service_data(raw: list) -> list:
+    """Flatten provider responses from ``{scope_ref: data}`` to ``{scope, data}`` pairs."""
+    flattened: list = []
+    for item in raw:
+        if isinstance(item, dict):
+            for scope_ref, data in item.items():
+                flattened.append({"scope": scope_ref, "data": data})
+        else:
+            flattened.append(item)
+    return flattened
+
 
 MCP_INSTRUCTIONS = (
     "PERMYT lets you request access to user data held by external services "
@@ -209,6 +238,13 @@ def create_mcp_app():
     Returns a Starlette ASGI app with OAuth auth routes + CORS.
     ASGI router strips /mcp prefix, so streamable_http_path="/" matches
     external /mcp path after stripping.
+
+    Known limitation — transient -32600 "Session not found" errors:
+        Sessions are held in-memory by the SDK's StreamableHTTPSessionManager.
+        Server restarts (deploys) wipe all sessions, so clients holding a stale
+        mcp-session-id will receive INVALID_REQUEST (-32600). This is an upstream
+        SDK limitation — FastMCP does not expose session_idle_timeout or EventStore
+        (for resumability) as constructor parameters. Clients should retry on -32600.
     """
 
     app = mcp.streamable_http_app()
@@ -314,9 +350,13 @@ async def permyt_check_access(request_id: str, ctx: Context = None) -> str:
     # If completed with services, call providers to get actual data
     if status == "completed" and result.get("services"):
         try:
-            data = await asyncio.to_thread(client.call_services, result["services"])
+            raw_data = await asyncio.to_thread(client.call_services, result["services"])
             return json.dumps(
-                {"request_id": request_id, "status": "completed", "data": data},
+                {
+                    "request_id": request_id,
+                    "status": "completed",
+                    "data": _flatten_service_data(raw_data),
+                },
                 default=str,
             )
         except Exception as exc:
@@ -330,24 +370,27 @@ async def permyt_check_access(request_id: str, ctx: Context = None) -> str:
                 default=str,
             )
 
-    # Terminal failure — include actionable message
+    # Terminal failure — user-facing message + separate client hint
     if status in FAILURE_MESSAGES:
+        failure = FAILURE_MESSAGES[status]
         return json.dumps(
             {
                 "request_id": request_id,
                 "status": status,
                 "reason": result.get("reason"),
-                "message": FAILURE_MESSAGES[status],
+                "message": failure["message"],
+                "client_hint": failure["client_hint"],
             },
             default=str,
         )
 
-    # Intermediate status — include progress message + polling hint
-    message = STATUS_MESSAGES.get(status, f"Status: {status}")
-    if status not in TERMINAL_STATUSES:
-        message += " Poll again with permyt_check_access."
-
+    # Intermediate status — progress message + separate client hint
     return json.dumps(
-        {"request_id": request_id, "status": status, "message": message},
+        {
+            "request_id": request_id,
+            "status": status,
+            "message": STATUS_MESSAGES.get(status, f"Status: {status}"),
+            "client_hint": CLIENT_HINTS.get(status),
+        },
         default=str,
     )
