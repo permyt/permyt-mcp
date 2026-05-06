@@ -175,7 +175,7 @@ class PermytInboundView(APIView):
     """
     Webhook endpoint for PERMYT broker callbacks.
 
-    Handles: user_connect, request_status.
+    Handles: user_connect, user_disconnect, request_status.
     No auth required — requests are signed + encrypted by the broker.
     """
 

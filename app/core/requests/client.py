@@ -128,6 +128,32 @@ class PermytClient(BasePermytClient):
         return {"logged": True, "auth_token": auth_token.key}
 
     # ------------------------------------------------------------------
+    # User disconnect
+    # ------------------------------------------------------------------
+
+    def process_user_disconnect(self, data: dict[str, Any]) -> dict[str, Any] | None:
+        """Handle the ``user_disconnect`` callback from the PERMYT broker.
+
+        Revoke the system auth token, clear the PERMYT identity from the
+        local user, and invalidate any active QR-login sessions. Idempotent
+        for already-disconnected users.
+        """
+        permyt_user_id = data.get("permyt_user_id")
+        if not permyt_user_id:
+            raise exceptions.InvalidInputError("permyt_user_id is required for user disconnect.")
+
+        try:
+            user = User.objects.get(permyt_user_id=permyt_user_id)
+        except User.DoesNotExist:
+            return {"disconnected": True}
+
+        Token.objects.filter(user=user).delete()
+        LoginToken.objects.filter(user=user).delete()
+        user.permyt_user_id = None
+        user.save()
+        return {"disconnected": True}
+
+    # ------------------------------------------------------------------
     # Status callbacks
     # ------------------------------------------------------------------
 
