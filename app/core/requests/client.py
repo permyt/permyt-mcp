@@ -134,9 +134,13 @@ class PermytClient(BasePermytClient):
     def process_user_disconnect(self, data: dict[str, Any]) -> dict[str, Any] | None:
         """Handle the ``user_disconnect`` callback from the PERMYT broker.
 
-        Revoke the system auth token, clear the PERMYT identity from the
-        local user, and invalidate any active QR-login sessions. Idempotent
-        for already-disconnected users.
+        Idempotent — a repeat call for an already-disconnected user is a
+        no-op. Regular users have no non-PERMYT login path, so the ``User``
+        row is deleted outright (cascade clears auth tokens and login
+        tokens). Privileged users (``is_staff``, ``is_superuser``,
+        ``is_account_manager``) keep their account: the system auth token
+        and login tokens are dropped and only ``permyt_user_id`` is
+        nulled, so they can still sign in via the admin paths.
         """
         permyt_user_id = data.get("permyt_user_id")
         if not permyt_user_id:
@@ -147,10 +151,13 @@ class PermytClient(BasePermytClient):
         except User.DoesNotExist:
             return {"disconnected": True}
 
-        Token.objects.filter(user=user).delete()
-        LoginToken.objects.filter(user=user).delete()
-        user.permyt_user_id = None
-        user.save()
+        if user.is_staff or user.is_superuser or user.is_account_manager:
+            Token.objects.filter(user=user).delete()
+            LoginToken.objects.filter(user=user).delete()
+            user.permyt_user_id = None
+            user.save()
+        else:
+            user.delete()
         return {"disconnected": True}
 
     # ------------------------------------------------------------------
