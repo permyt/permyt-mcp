@@ -82,7 +82,7 @@ permyt-mcp/
 | `User` | `app/core/users/models.py` | Custom user with `permyt_user_id` for PERMYT identity |
 | `LoginToken` | `app/core/users/models.py` | Short-lived QR-login session binding |
 | `Nonce` | `app/core/requests/models.py` | Replay protection (unique nonce values) |
-| `PermytClient` | `app/core/requests/client.py` | Requester-side PermytClient — QR login, nonce, status callbacks |
+| `PermytClient` | `app/core/requests/client.py` | Requester-side PermytClient — QR login, disconnect, nonce, status callbacks |
 | `RequestAccessView` | `app/core/requests/views.py` | REST endpoint: submit access request |
 | `CheckAccessView` | `app/core/requests/views.py` | REST endpoint: poll status, fetch data |
 | `PermytInboundView` | `app/core/requests/views.py` | Inbound webhook for PERMYT broker callbacks |
